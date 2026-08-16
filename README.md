@@ -61,4 +61,14 @@ sfx/               누를 때 재생되는 파열음
 
 코드는 MIT입니다. `vendor/three.min.js`는 [three.js](https://github.com/mrdoob/three.js) r149 (MIT).
 
-`sfx/`의 음원은 이 저장소에 포함되지 않습니다. `crack1.mp3` · `crack2.mp3` · `crack3.mp3` 세 파일을 직접 넣어 주세요. 없어도 위젯은 소리 없이 정상 동작합니다.
+### 음원
+
+`sfx/`의 파열음은 ASMR 크리에이터 [waisyasmr](https://www.youtube.com/@waisyasmr)의
+왁스 크래킹 영상에서 가져온 것으로, **저작권은 원 제작자에게 있습니다.**
+
+이 저장소는 개인용 비공개 저장소입니다. 공개로 전환하거나 재배포할 계획이라면 이 파일들을
+먼저 빼고, 재배포가 허용된 음원(예: [Freesound](https://freesound.org)의 CC0,
+[Pixabay Sound Effects](https://pixabay.com/sound-effects/))으로 교체하세요.
+`wax cracking`, `crunch`, `ice crack` 등으로 검색하면 됩니다. 2~4초 길이가 적당합니다.
+
+음원 파일이 없어도 위젯은 소리 없이 정상 동작합니다.
