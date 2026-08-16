@@ -29,6 +29,7 @@ import webview
 HERE = Path(__file__).resolve().parent
 PAGE = HERE / "index.html"
 LOG = HERE / "wakppu.log"
+ICON = HERE / "wakppu.ico"
 
 # 이 색으로 칠해진 픽셀이 통째로 뚫린다. 장난감에 우연히 나올 일 없는 값으로 고른다.
 CHROMA = (1, 2, 3)
@@ -187,10 +188,11 @@ def main() -> None:
         shadow=False,
     )
 
+    icon = str(ICON) if ICON.exists() else None
     if opaque:
-        webview.start()
+        webview.start(icon=icon)
     else:
-        webview.start(punch_background if chroma else punch_dwm, api.window)
+        webview.start(punch_background if chroma else punch_dwm, api.window, icon=icon)
 
 
 if __name__ == "__main__":

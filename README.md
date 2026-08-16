@@ -16,6 +16,15 @@ python widget.py
 
 콘솔 창 없이 띄우려면 `pythonw.exe widget.py`, 또는 `왁뿌볼.bat`을 실행하세요.
 
+### 바탕화면 바로가기
+
+```powershell
+powershell -ExecutionPolicy Bypass -File ".\바로가기 만들기.ps1"
+```
+
+바탕화면에 `왁뿌볼.lnk`가 생깁니다. 아이콘(`wakppu.ico`)은 위젯을 직접 렌더해서 만든
+16~256px 6단계짜리라 작업표시줄에서도 또렷합니다.
+
 ## 조작
 
 | 동작 | 결과 |
