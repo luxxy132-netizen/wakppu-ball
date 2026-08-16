@@ -1,0 +1,848 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+<meta charset="utf-8" />
+<title>왁뿌볼</title>
+<style>
+  * { box-sizing: border-box; margin: 0; padding: 0; }
+
+  html, body {
+    height: 100%;
+    background: transparent;
+    overflow: hidden;
+    user-select: none; -webkit-user-select: none;
+    font-family: "Pretendard", "Malgun Gothic", "Segoe UI", sans-serif;
+  }
+
+  /* 3D 무대 — 창 전체를 덮고 배경은 완전 투명 */
+  /* canvas 는 대체 요소라 inset:0 만으로는 늘어나지 않고 자기 버퍼 크기로 눌러앉는다.
+     width/height 를 명시해야 창에 딱 맞는다. */
+  #gl { position: fixed; top: 0; left: 0; width: 100%; height: 100%; display: block; cursor: grab; }
+  #gl.dragging { cursor: grabbing; }
+
+  /* ⋯ 버튼. 투명 영역은 클릭이 뒤로 통과하므로 항상 최소한의 불투명도를 유지한다 */
+  #more {
+    position: fixed; top: 6px; right: 6px;
+    width: 22px; height: 22px;
+    border: 0; border-radius: 50%;
+    /* 순수 검정은 창 배경으로 취급돼 뚫려 버리므로 확실히 다른 색을 쓴다 */
+    background: rgba(74, 68, 92, .55);
+    color: #fff; font-size: 12px; line-height: 1; letter-spacing: 1px;
+    cursor: pointer;
+    transition: background .16s ease;
+  }
+  #more:hover { background: rgba(74, 68, 92, .95); }
+
+  /* ── 설정 패널 ────────────────────────────────────── */
+  #panel {
+    position: fixed; inset: 0;
+    padding: 12px;
+    display: none; flex-direction: column; gap: 10px;
+    background: rgb(32, 29, 41);        /* 검정에 너무 가까우면 창째로 뚫린다 */
+    border-radius: 14px;
+    color: #efeaf5; font-size: 11px;
+  }
+  #panel.open { display: flex; }
+
+  .head { display: flex; align-items: center; gap: 8px; }
+  .head b { font-size: 12px; }
+  .head .close { margin-left: auto; }
+  .head button {
+    width: 22px; height: 22px; border: 0; border-radius: 6px;
+    background: transparent; color: #8d86a0; cursor: pointer; font-size: 13px;
+  }
+  .head button:hover { background: #3a2430; color: #ff9aa6; }
+
+  .label { color: #8d86a0; font-size: 10px; letter-spacing: .06em; margin-bottom: 5px; }
+  .grid { display: flex; flex-wrap: wrap; gap: 5px; }
+
+  .swatch {
+    width: 22px; height: 22px; border-radius: 50%;
+    border: 2px solid transparent; padding: 0; cursor: pointer;
+    box-shadow: inset 0 -4px 6px rgba(0,0,0,.25), inset 0 4px 5px rgba(255,255,255,.55);
+  }
+  .swatch[aria-pressed="true"] { border-color: #fff; transform: scale(1.12); }
+
+  .chip {
+    flex: 1 1 0; min-width: 52px; padding: 6px 0;
+    font-size: 10.5px; font-family: inherit;
+    color: #8d86a0; background: #1d1a24;
+    border: 1px solid #34303f; border-radius: 8px; cursor: pointer;
+  }
+  .chip[aria-pressed="true"] {
+    color: #17151c; background: var(--accent, #ffb3c8);
+    border-color: var(--accent, #ffb3c8); font-weight: 700;
+  }
+
+  .foot { margin-top: auto; color: #625b75; font-size: 9.5px; line-height: 1.7; }
+  .foot a { color: #b98a94; }
+</style>
+</head>
+<body>
+
+<canvas id="gl"></canvas>
+<button id="more" title="설정">⋯</button>
+
+<div id="panel">
+  <div class="head pywebview-drag-region">
+    <b>왁뿌볼</b>
+    <button id="panelClose" class="close" title="닫기">✕</button>
+  </div>
+
+  <div><div class="label">디자인</div><div class="grid" id="designs"></div></div>
+  <div><div class="label">색상</div><div class="grid" id="colors"></div></div>
+  <div><div class="label">크기</div><div class="grid" id="sizes"></div></div>
+
+  <div class="foot">
+    공을 꾹 누르면 누른 만큼 부서지고, 손을 떼면 다시 붙습니다<br />
+    끌면 창이 움직입니다 · 스페이스바로도 누를 수 있습니다<br />
+    <a href="#" id="quit">위젯 종료</a>
+  </div>
+</div>
+
+<script>
+/* 창이 멎으면 화면으로는 아무것도 알 수 없으니, 진행 상황을 파이썬 로그로 넘긴다.
+   (wakppu/wakppu.log) */
+function note(msg) {
+  try {
+    if (window.pywebview && window.pywebview.api) window.pywebview.api.log(msg);
+    else (window.__pending = window.__pending || []).push(msg);
+  } catch { /* 로깅 실패로 위젯이 죽으면 안 된다 */ }
+}
+addEventListener("pywebviewready", () => {
+  (window.__pending || []).forEach(note);
+  window.__pending = [];
+});
+addEventListener("error", e => note("ERROR " + e.message + " @" + e.filename + ":" + e.lineno));
+addEventListener("unhandledrejection", e => note("REJECT " + e.reason));
+note("페이지 시작");
+</script>
+<script src="./vendor/three.min.js"></script>
+<script>
+/* ═══════════════════════════════════════════════════════════
+   설정값
+   ═══════════════════════════════════════════════════════════ */
+const COLORS = [
+  { name: "청사과", body: "#7fc62c", core: "#c9e88a" },
+  { name: "버터",   body: "#f7d271", core: "#f6e3a8" },
+  { name: "피치",   body: "#ff9d86", core: "#ffc7b4" },
+  { name: "라벤더", body: "#b9a3f0", core: "#d5c8fb" },
+  { name: "스카이", body: "#7cc4f2", core: "#b8e0fb" },
+  { name: "딸기",   body: "#f2607a", core: "#ffa8b8" },
+  { name: "민트",   body: "#5fd6b4", core: "#9ff0d8" },
+];
+
+// tint = 고른 색을 껍질에 입힐지, 속살에 입힐지.
+// 초코는 껍질이 초콜릿으로 고정이고 갈라진 틈으로 드러나는 속살에 색이 들어간다.
+const DESIGNS = {
+  "초코":   { shape: "sphere", tint: "core", shell: "#3c2318", pick: 6,
+              gloss: .55, rough: .34, alpha: 1, sep: 1 },
+  "청사과": { shape: "sphere", tint: "shell", pick: 0,
+              gloss: .95, rough: .07, alpha: .84, sep: 1, knot: true },
+  "버터":   { shape: "stick",  tint: "shell", pick: 1,
+              gloss: .30, rough: .55, alpha: 1, sep: .5 },
+  // 반투명 젤리 안에 홀로그램 반짝이가 든 글리터 만두
+  "만두":   { shape: "bun",    tint: "shell", pick: 2,
+              gloss: 1, rough: .05, alpha: .72, sep: .85, glitter: true },
+};
+
+// tone = 몸통 대역 중심, low = 저역 울림 양, grains = 서걱거리는 파편 알갱이 수.
+// 영상의 실제 파열음은 중심 4kHz 에 1k~16k 가 고르게 퍼진 "넓고 오래 이어지는 서걱거림"이라,
+// 좁은 필터(Q 큰 값)로 쏘지 않고 Q 를 0.5~0.8 로 낮춰 뭉개지는 질감을 만든다.
+const BREAK_T = 1.0;      // 꾹 눌러 완전히 부서지기까지 걸리는 초
+
+// 창 자체를 키우고 줄여서 왁뿌볼 크기를 바꾼다 (프레임 없는 창이라 테두리로는 못 잡는다)
+const SIZES = { "아주작게": 110, "작게": 150, "보통": 200, "크게": 280 };
+const PANEL_SIZE = [292, 330];   // 설정을 여는 동안만 잠깐 늘어나는 크기
+
+const R = 1;              // 기준 반지름
+const SHARDS = 17;        // 껍질 조각 수 (불규칙 보로노이)
+const FIT = 1.62;         // 파편까지 담을 시야 반경 — 이 안에 항상 들어오도록 카메라를 맞춘다
+const HEAL_T = 2.2;       // 손을 떼면 균열이 아주 천천히 메워진다
+const DENT_HEAL_T = 5.0;  // 눌린 자국은 균열보다 훨씬 더 느리게 펴진다 (클레이라서)
+const DENT = .34;         // 누른 자리가 푹 들어가는 깊이 (아이클레이라 되튀지 않는다)
+const SINK = .022;        // 조각이 클레이 속으로 가라앉는 정도. 밖으로는 벌어지지 않는다.
+
+/* ═══════════════════════════════════════════════════════════
+   상태
+   ═══════════════════════════════════════════════════════════ */
+let design = "청사과", color = COLORS[0], sizeName = "작게";
+let damage = 0;           // 0 = 말짱함, 1 = 완전히 부서짐. 누르는 동안 계속 자란다.
+let dent = 0;             // 클레이가 눌린 깊이. 균열과 따로 논다 — 훨씬 늦게 펴진다.
+let pressing = false;
+let repeats = 0;          // 같은 자리를 연달아 누른 횟수. 누를수록 잘게 쪼개진다.
+let toy = null;
+const pressDir = new THREE.Vector3(0, 0, 1);   // 누른 지점의 방향. 여기가 푹 들어간다.
+
+/* ═══════════════════════════════════════════════════════════
+   사운드
+   ═══════════════════════════════════════════════════════════ */
+/*
+ * 실제 녹음본을 그대로 쓴다.
+ * 예전엔 노이즈를 실시간 합성해 알갱이를 계속 뿌렸는데, 꾹 누르고 있으면
+ * 초당 수십 개의 오디오 노드가 쌓여 소리가 비트박스처럼 끊기고 위젯도 멎었다.
+ * 누를 때 한 번 재생하고, 길게 누르면 끝나는 대로 다음 클립을 잇는다.
+ */
+const CLIP_SRC = ["sfx/crack1.mp3", "sfx/crack2.mp3", "sfx/crack3.mp3"];
+
+// 세 개를 한꺼번에 preload 하면 창이 뜨자마자 멎는 경우가 있어, 쓸 때 하나씩 만든다.
+const CLIPS = CLIP_SRC.map(src => {
+  const a = new Audio();
+  a.preload = "none";
+  a.src = src;
+  return a;
+});
+
+let nowPlaying = null;
+let fadeTimer = null;
+let audioBroken = false;
+
+function startCrackSound() {
+  if (audioBroken) return;
+  clearInterval(fadeTimer);
+  const a = CLIPS[(Math.random() * CLIPS.length) | 0];
+  nowPlaying = a;
+  a.onended = () => { if (pressing && nowPlaying === a) startCrackSound(); };
+  a.onerror = () => { audioBroken = true; note("audio error: " + a.src); };
+  try { a.pause(); a.currentTime = 0; } catch { /* 아직 로딩 전일 수 있다 */ }
+  a.volume = 1;
+  const p = a.play();
+  if (p && p.catch) p.catch(err => note("play 실패: " + err));
+}
+
+/** 손을 떼면 뚝 끊지 않고 짧게 줄여서 끈다 (하드컷은 딱 소리가 난다) */
+function stopCrackSound() {
+  const a = nowPlaying;
+  nowPlaying = null;
+  if (!a) return;
+  a.onended = null;
+  clearInterval(fadeTimer);
+  fadeTimer = setInterval(() => {
+    a.volume = Math.max(0, a.volume - .12);
+    if (a.volume <= .01) {
+      clearInterval(fadeTimer);
+      a.pause();
+      try { a.currentTime = 0; } catch { /* 무시 */ }
+    }
+  }, 16);
+}
+
+/* ═══════════════════════════════════════════════════════════
+   three.js 무대
+   ═══════════════════════════════════════════════════════════ */
+// 재질 색(#rrggbb)도 텍스처와 같은 sRGB 기준으로 해석되게 한다.
+THREE.ColorManagement.legacyMode = false;
+
+const canvas = document.getElementById("gl");
+const renderer = new THREE.WebGLRenderer({ canvas, alpha: true, antialias: true });
+renderer.setPixelRatio(Math.min(devicePixelRatio, 1.5));   // 작은 위젯이라 이 이상은 낭비다
+renderer.setClearAlpha(0);
+renderer.outputEncoding = THREE.sRGBEncoding;
+
+const scene = new THREE.Scene();
+const camera = new THREE.PerspectiveCamera(40, 1, .1, 50);
+
+scene.add(new THREE.HemisphereLight(0xffffff, 0x554e70, .95));
+const key = new THREE.DirectionalLight(0xffffff, 1.25); key.position.set(3, 5, 4);   scene.add(key);
+const fill = new THREE.DirectionalLight(0xffffff, .4);  fill.position.set(-2, 1, 3);  scene.add(fill);
+const rim = new THREE.DirectionalLight(0xcfe0ff, .7);   rim.position.set(-4, -1, -3); scene.add(rim);
+
+/** 창 크기·비율이 어떻든 반경 FIT 이 화면 안에 들어오도록 카메라를 물린다 */
+let lastW = 0, lastH = 0;
+
+function resize() {
+  const w = innerWidth, h = innerHeight;
+  if (!w || !h || (w === lastW && h === lastH)) return;   // 아직 크기가 안 잡힌 시점 방어
+  lastW = w; lastH = h;
+  renderer.setSize(w, h);          // CSS 크기까지 같이 갱신해야 어긋나지 않는다
+  camera.aspect = w / h;
+  const halfTan = Math.tan((camera.fov / 2) * Math.PI / 180);
+  camera.position.z = FIT / (halfTan * Math.min(1, camera.aspect));
+  camera.updateProjectionMatrix();
+}
+addEventListener("resize", resize);
+resize();
+
+/* ═══════════════════════════════════════════════════════════
+   텍스처 — 색까지 캔버스에 구워서 재질은 흰색으로 둔다
+   ═══════════════════════════════════════════════════════════ */
+function canvasTex(w, h, draw) {
+  const c = document.createElement("canvas");
+  c.width = w; c.height = h;
+  draw(c.getContext("2d"), w, h);
+  const t = new THREE.CanvasTexture(c);
+  t.encoding = THREE.sRGBEncoding;
+  t.anisotropy = 4;
+  return t;
+}
+
+function mottle(g, w, h, tint, n, alpha) {
+  for (let i = 0; i < n; i++) {
+    const x = Math.random() * w, y = Math.random() * h, r = 8 + Math.random() * 60;
+    const grad = g.createRadialGradient(x, y, 0, x, y, r);
+    grad.addColorStop(0, tint); grad.addColorStop(1, "rgba(0,0,0,0)");
+    g.globalAlpha = alpha; g.fillStyle = grad; g.fillRect(x - r, y - r, r * 2, r * 2);
+  }
+  g.globalAlpha = 1;
+}
+
+/** 구 껍질용 등장방형 텍스처. 정면은 u=0.25 */
+/** 만두 얼굴 (정면 u=0.25 → x=256) */
+function drawFace(g) {
+  const cx = 256, cy = 322;
+  g.fillStyle = "#191313";
+  for (const dx of [-42, 42]) { g.beginPath(); g.ellipse(cx + dx, cy, 13, 17, 0, 0, 7); g.fill(); }
+  g.fillStyle = "#fff";
+  for (const dx of [-46, 38]) { g.beginPath(); g.ellipse(cx + dx, cy - 7, 4.5, 5.5, 0, 0, 7); g.fill(); }
+  g.strokeStyle = "#191313"; g.lineWidth = 5; g.lineCap = "round";
+  g.beginPath(); g.arc(cx, cy + 16, 16, .15 * Math.PI, .85 * Math.PI); g.stroke();
+  g.strokeStyle = "rgba(255,130,150,.8)"; g.lineWidth = 4;
+  for (const dx of [-80, 80]) for (let k = 0; k < 3; k++) {
+    g.beginPath(); g.moveTo(cx + dx - 8 + k * 8, cy + 4); g.lineTo(cx + dx - 12 + k * 8, cy + 20); g.stroke();
+  }
+}
+
+function makeShellTexture() {
+  const D = DESIGNS[design];
+  const base = D.tint === "shell" ? color.body : D.shell;
+
+  if (design === "만두") {
+    return canvasTex(1024, 512, (g, w, h) => {
+      // 고른 색을 흰색으로 씻어내 반투명 젤리처럼 옅게 만든다
+      g.fillStyle = base; g.fillRect(0, 0, w, h);
+      g.fillStyle = "rgba(255,255,255,.62)"; g.fillRect(0, 0, w, h);
+      mottle(g, w, h, "#ffffff", 40, .12);
+
+      // 홀로그램 반짝이. 위젯이 작아서 조각을 크고 진하게 해야 형태가 보인다.
+      const flake = ["#ff7ab8", "#5cc8ff", "#ffd451", "#5fe8ac", "#c08cff", "#ffffff"];
+      for (let i = 0; i < 620; i++) {
+        const x = Math.random() * w, y = Math.random() * h;
+        const s = 4 + Math.random() * 7;
+        g.fillStyle = flake[(Math.random() * flake.length) | 0];
+        g.globalAlpha = .55 + Math.random() * .45;
+        g.beginPath();
+        g.ellipse(x, y, s, s * (.35 + Math.random() * .7), Math.random() * 3.14, 0, 7);
+        g.fill();
+      }
+      g.globalAlpha = 1;
+
+      // 위로 모이는 만두 주름
+      g.strokeStyle = "rgba(120,100,90,.16)"; g.lineWidth = 6; g.lineCap = "round";
+      for (let i = 0; i < 14; i++) {
+        const x = (i / 14) * w + 12;
+        g.beginPath(); g.moveTo(x, 0); g.quadraticCurveTo(x + 16, 90, x + 4, 200); g.stroke();
+      }
+      drawFace(g);
+    });
+  }
+
+  if (design === "청사과") {
+    return canvasTex(1024, 512, (g, w, h) => {
+      g.fillStyle = base; g.fillRect(0, 0, w, h);
+      mottle(g, w, h, "#ffffff", 55, .16);
+      mottle(g, w, h, color.core, 25, .22);
+    });
+  }
+
+  return canvasTex(1024, 512, (g, w, h) => {          // 초코
+    g.fillStyle = base; g.fillRect(0, 0, w, h);
+    mottle(g, w, h, "#000000", 45, .18);
+    mottle(g, w, h, "#7a5238", 30, .12);
+  });
+}
+
+/** 버터 라벨. 좌하단 구석은 무늬 없는 여백으로 비워 둔다(옆면이 여기를 참조) */
+function makeStickTexture() {
+  return canvasTex(512, 256, (g, w, h) => {
+    g.fillStyle = color.body; g.fillRect(0, 0, w, h);
+    mottle(g, w, h, "#ffffff", 25, .18);
+    const label = "#2f5aa8";
+    g.fillStyle = label; g.textAlign = "center";
+    g.font = "bold 26px 'Segoe UI', sans-serif"; g.fillText("SALTED", w / 2, 74);
+    g.font = "900 84px 'Segoe UI', sans-serif";  g.fillText("BUTTER", w / 2, 152);
+    g.font = "bold 22px 'Segoe UI', sans-serif";
+    g.fillText("4 OZ.    NET WT. (113 G)", w / 2, 192);
+    g.fillStyle = color.body; g.fillRect(0, h - 48, 48, 48);   // 옆면용 여백
+  });
+}
+
+/* ═══════════════════════════════════════════════════════════
+   불규칙 파편 — 표면에 뿌린 씨앗으로 보로노이 분할
+   격자로 자르면 규칙적인 줄무늬가 보여서 씨앗 기준으로 나눈다.
+   인접 조각이 변을 정확히 공유하므로 평소엔 이음새가 아예 없다.
+   ═══════════════════════════════════════════════════════════ */
+function fibonacciDirs(n) {
+  const dirs = [], ga = Math.PI * (3 - Math.sqrt(5));
+  for (let i = 0; i < n; i++) {
+    const y = 1 - (i / Math.max(1, n - 1)) * 2;
+    const r = Math.sqrt(Math.max(0, 1 - y * y));
+    const th = ga * i;
+    dirs.push(new THREE.Vector3(Math.cos(th) * r, y, Math.sin(th) * r)
+      .add(new THREE.Vector3(
+        (Math.random() - .5) * .35, (Math.random() - .5) * .35, (Math.random() - .5) * .35))
+      .normalize());
+  }
+  return dirs;
+}
+
+/** 방향 벡터를 반쪽 크기 half 인 직육면체 표면으로 투영 */
+function projectToBox(dir, half) {
+  const t = 1 / Math.max(
+    Math.abs(dir.x) / half.x, Math.abs(dir.y) / half.y, Math.abs(dir.z) / half.z);
+  return dir.clone().multiplyScalar(t);
+}
+
+function fracture(baseGeo, seeds) {
+  const g = baseGeo.index ? baseGeo.toNonIndexed() : baseGeo;
+  const pos = g.attributes.position, nrm = g.attributes.normal, uv = g.attributes.uv;
+  const buckets = seeds.map(() => ({ p: [], n: [], t: [], acc: new THREE.Vector3() }));
+  const c = new THREE.Vector3(), v = new THREE.Vector3();
+
+  for (let tri = 0; tri < pos.count / 3; tri++) {
+    c.set(0, 0, 0);
+    for (let k = 0; k < 3; k++) { v.fromBufferAttribute(pos, tri * 3 + k); c.add(v); }
+    c.divideScalar(3);
+
+    let best = 0, bd = Infinity;
+    for (let s = 0; s < seeds.length; s++) {
+      const d = seeds[s].distanceToSquared(c);
+      if (d < bd) { bd = d; best = s; }
+    }
+    const b = buckets[best];
+    for (let k = 0; k < 3; k++) {
+      const i = tri * 3 + k;
+      b.p.push(pos.getX(i), pos.getY(i), pos.getZ(i));
+      b.n.push(nrm.getX(i), nrm.getY(i), nrm.getZ(i));
+      b.t.push(uv.getX(i), uv.getY(i));
+    }
+    b.acc.add(v.fromBufferAttribute(nrm, tri * 3));
+  }
+
+  if (g !== baseGeo) baseGeo.dispose();
+
+  return buckets.filter(b => b.p.length).map(b => {
+    const geo = new THREE.BufferGeometry();
+    geo.setAttribute("position", new THREE.Float32BufferAttribute(b.p, 3));
+    geo.setAttribute("normal", new THREE.Float32BufferAttribute(b.n, 3));
+    geo.setAttribute("uv", new THREE.Float32BufferAttribute(b.t, 2));
+
+    // 조각의 무게중심을 원점으로 옮겨 두면 회전이 "제자리에서" 일어난다.
+    // 원점(공 중심) 기준으로 돌리면 조각이 표면을 타고 미끄러져 밖으로 날아간다.
+    const c = new THREE.Vector3();
+    for (let i = 0; i < b.p.length; i += 3) c.x += b.p[i], c.y += b.p[i + 1], c.z += b.p[i + 2];
+    c.multiplyScalar(3 / b.p.length);
+    geo.translate(-c.x, -c.y, -c.z);
+
+    return { geo, n: b.acc.normalize(), c };
+  });
+}
+
+/** 조각 하나에 성격을 부여한다 (가라앉음·꺾임·미끄러짐) */
+function dressPlate(m, n, home, sepScale) {
+  m.userData.n = n;
+  m.userData.home = home;
+  m.userData.sink = Math.random() * SINK * sepScale;
+  m.userData.fold = new THREE.Vector3(
+    (Math.random() - .5) * .21, (Math.random() - .5) * .21, (Math.random() - .5) * .21);
+  // 제자리에서 꺾여도 곡면 조각은 모서리가 들린다. 꺾인 만큼 안으로 밀어 상쇄한다.
+  m.userData.comp = m.userData.fold.length() * .28;
+  // 표면을 따라 옆으로 미끄러지면 반경이 커지지 않으면서 균열만 벌어진다.
+  m.userData.tan = new THREE.Vector3(Math.random() - .5, Math.random() - .5, Math.random() - .5)
+    .projectOnPlane(n).normalize().multiplyScalar(.021 + Math.random() * .026);
+  m.position.copy(home);
+  return m;
+}
+
+/**
+ * 같은 자리를 다시 누르면 그 부근 조각을 더 잘게 쪼갠다.
+ * 조각 지오메트리를 다시 보로노이로 나누는 것뿐이라 기존 균열 상태는 그대로 유지된다.
+ */
+function refineAt(dir, pieces) {
+  // 조각 하나가 드로우콜 하나다. 너무 늘리면 위젯이 버벅인다.
+  if (toy.plates.length > 70) return 0;
+  const next = [];
+  let split = 0;
+
+  for (const p of toy.plates) {
+    const attr = p.geometry.attributes.position;
+    if (p.userData.n.dot(dir) < .55 || attr.count < 240) { next.push(p); continue; }
+
+    const seeds = [];
+    for (let i = 0; i < pieces; i++)
+      seeds.push(new THREE.Vector3().fromBufferAttribute(attr, (Math.random() * attr.count) | 0));
+
+    const parts = fracture(p.geometry, seeds);
+    if (parts.length < 2) { next.push(p); continue; }
+
+    for (const part of parts) {
+      const m = new THREE.Mesh(part.geo, p.material);
+      dressPlate(m, part.n, p.userData.home.clone().add(part.c), toy.D.sep);
+      toy.group.add(m);
+      next.push(m);
+    }
+    toy.group.remove(p);
+    p.geometry.dispose();
+    split++;
+  }
+
+  toy.plates = next;
+  return split;
+}
+
+/** 누른 지점을 중심으로 v 가 얼마나 안쪽으로 밀려 들어가야 하는지 */
+function dentAmount(v, d) {
+  const len = Math.hypot(v.x, v.y, v.z) || 1;
+  const cos = (v.x * pressDir.x + v.y * pressDir.y + v.z * pressDir.z) / len;
+  const f = Math.max(0, (cos - .12) / .88);
+  return DENT * d * f * f;
+}
+
+/* ═══════════════════════════════════════════════════════════
+   장난감 조립
+   ═══════════════════════════════════════════════════════════ */
+function build() {
+  if (toy) { scene.remove(toy.group); toy.dispose(); }
+
+  const D = DESIGNS[design];
+  const group = new THREE.Group();
+  const materials = [];
+  const coreMat = new THREE.MeshStandardMaterial({
+    color: new THREE.Color(D.tint === "core" ? color.body : color.core),
+    roughness: .95, metalness: 0,
+  });
+  materials.push(coreMat);
+
+  let shellGeo, seeds, core;
+
+  if (D.shape === "stick") {
+    const L = 2.1, T = .92;
+    const half = new THREE.Vector3(L / 2, T / 2, T / 2);
+    shellGeo = new THREE.BoxGeometry(L, T, T, 44, 22, 22).toNonIndexed();
+    // 라벨은 넓은 앞뒤 면에만. 나머지 면은 텍스처의 빈 구석을 보게 UV를 옮긴다
+    const uv = shellGeo.attributes.uv, nr = shellGeo.attributes.normal;
+    for (let i = 0; i < uv.count; i++) {
+      if (Math.abs(nr.getZ(i)) < .5)
+        uv.setXY(i, .01 + uv.getX(i) * .07, .01 + uv.getY(i) * .07);
+    }
+    seeds = fibonacciDirs(SHARDS + 7).map(d => projectToBox(d, half));
+    core = new THREE.Mesh(new THREE.BoxGeometry(L * .96, T * .90, T * .90, 20, 10, 10), coreMat);
+  } else {
+    // 촘촘할수록 파편 경계가 자연스럽지만, 조각내는 비용이 삼각형 수에 비례한다.
+    // 위젯이 멎지 않도록 균열이 계단져 보이지 않는 최소치로 잡았다.
+    shellGeo = new THREE.SphereGeometry(R, 80, 48).toNonIndexed();
+    seeds = fibonacciDirs(SHARDS).map(d => d.multiplyScalar(R));
+    // 조각이 가라앉을 여유를 조금 둔다. 평소엔 조각끼리 변을 공유해 틈이 없으므로
+    // 이만큼 띄워도 속이 새지 않는다.
+    core = new THREE.Mesh(new THREE.SphereGeometry(R * .93, 32, 20), coreMat);
+  }
+
+  const shellMat = new THREE.MeshPhysicalMaterial({
+    map: D.shape === "stick" ? makeStickTexture() : makeShellTexture(),
+    color: 0xffffff, side: THREE.DoubleSide,
+    roughness: D.rough, metalness: 0,
+    clearcoat: D.gloss, clearcoatRoughness: .06,
+    transparent: D.alpha < 1, opacity: D.alpha,
+  });
+  materials.push(shellMat);
+
+  // 조각마다 고유한 가라앉음·꺾임 성향을 한 번 정해 두면 균열이 규칙적으로 안 보인다
+  const plates = fracture(shellGeo, seeds).map(({ geo, n, c }) =>
+    dressPlate(new THREE.Mesh(geo, shellMat), n, c.clone(), D.sep));
+  plates.forEach(p => group.add(p));
+  group.add(core);
+
+  if (D.knot) {
+    const knotMat = new THREE.MeshPhysicalMaterial({
+      color: new THREE.Color(color.core), roughness: .04, clearcoat: 1,
+      transparent: true, opacity: .78,
+    });
+    materials.push(knotMat);
+    const knot = new THREE.Group();
+    for (let i = 0; i < 3; i++) {
+      const lobe = new THREE.Mesh(new THREE.ConeGeometry(.09, .3, 8), knotMat);
+      lobe.position.set(Math.cos(i * 2.1) * .09, R * 1.1, Math.sin(i * 2.1) * .09);
+      lobe.rotation.z = Math.cos(i * 2.1) * .5;
+      lobe.rotation.x = -Math.sin(i * 2.1) * .5;
+      knot.add(lobe);
+    }
+    const ring = new THREE.Mesh(new THREE.TorusGeometry(.15, .07, 10, 20), knotMat);
+    ring.rotation.x = Math.PI / 2; ring.position.y = R * .96;
+    knot.add(ring);
+    // 맨 위쪽 조각에 붙여 함께 튀어나갔다 돌아오게 한다
+    let top = plates[0];
+    for (const p of plates) if (p.userData.n.y > top.userData.n.y) top = p;
+    top.attach(knot);
+  }
+
+  const baseScale = new THREE.Vector3(1, D.shape === "bun" ? .84 : 1, 1);
+  group.scale.copy(baseScale);
+  group.rotation.x = D.shape === "stick" ? -.34 : 0;
+  scene.add(group);
+
+  toy = {
+    group, plates, core, materials, D, baseScale,
+    coreOrig: Float32Array.from(core.geometry.attributes.position.array),
+    dispose() {
+      plates.forEach(p => p.geometry.dispose());
+      core.geometry.dispose();
+      materials.forEach(m => { if (m.map) m.map.dispose(); m.dispose(); });
+    },
+  };
+
+  damage = 0;
+  dent = 0;
+  pressing = false;
+  lastDent = -1;
+}
+
+/* ═══════════════════════════════════════════════════════════
+   때리기 → 터짐 → 다시 흡착
+   ═══════════════════════════════════════════════════════════ */
+const raycaster = new THREE.Raycaster();
+const ndc = new THREE.Vector2();
+
+function pick(ev) {
+  ndc.set((ev.clientX / innerWidth) * 2 - 1, -(ev.clientY / innerHeight) * 2 + 1);
+  raycaster.setFromCamera(ndc, camera);
+  return raycaster.intersectObjects([...toy.plates, toy.core], false)[0] || null;
+}
+
+/**
+ * damage 하나로 균열 상태를 전부 표현한다.
+ *   0     말짱함 (조각들이 변을 공유해서 이음새가 아예 안 보인다)
+ *   ~0.15 실금이 번지기 시작
+ *   ~0.5  틈이 벌어지며 속이 드러남
+ *   1     조각이 완전히 들뜨고 기울어진 파쇄 상태
+ *
+ * 벌어짐은 d^0.65 라 누르자마자 실금이 곧바로 생기고,
+ * 기울기는 d^1.5 라 많이 부서졌을 때만 조각이 확 꺾인다.
+ */
+function applyDamage(d, k) {
+  const tilt = Math.pow(d, 1.2);
+  for (const p of toy.plates) {
+    const u = p.userData;
+    // 제자리에서 꺾이고, 눌린 자리는 클레이를 따라 함께 파묻힌다. 밖으로는 안 나간다.
+    p.position.copy(u.home)
+      .addScaledVector(pressDir, -dentAmount(u.home, k))
+      .addScaledVector(u.n, -(u.sink * d + u.comp * tilt))
+      .addScaledVector(u.tan, Math.pow(d, .55));
+    p.rotation.set(u.fold.x * tilt, u.fold.y * tilt, u.fold.z * tilt);
+  }
+  dentCore(k);
+}
+
+/**
+ * 속 알맹이는 아이클레이라 누른 자국이 그대로 눌린 채 남는다.
+ * 정점을 전부 옮기고 법선을 다시 계산하는 작업이라, 눈에 안 보일 만큼
+ * 조금 변한 프레임에서는 건너뛴다 (매 프레임 돌리면 위젯이 버벅인다).
+ */
+let lastDent = -1;
+
+function dentCore(d) {
+  if (Math.abs(d - lastDent) < .006 && d !== 0 && d !== 1) return;
+  lastDent = d;
+  const pos = toy.core.geometry.attributes.position;
+  const o = toy.coreOrig;
+  const v = new THREE.Vector3();
+  for (let i = 0; i < pos.count; i++) {
+    v.set(o[i * 3], o[i * 3 + 1], o[i * 3 + 2]);
+    const amt = dentAmount(v, d);
+    pos.setXYZ(i, v.x - pressDir.x * amt, v.y - pressDir.y * amt, v.z - pressDir.z * amt);
+  }
+  pos.needsUpdate = true;
+  toy.core.geometry.computeVertexNormals();
+}
+
+/* ═══════════════════════════════════════════════════════════
+   루프
+   ═══════════════════════════════════════════════════════════ */
+const clock = new THREE.Clock();
+let simTime = 0;
+
+function animate() {
+  requestAnimationFrame(animate);
+  step(Math.min(clock.getDelta(), .05));
+  renderer.render(scene, camera);
+}
+
+function step(dt) {
+  resize();                 // 창이 늦게 크기를 잡는 경우까지 매 프레임 확인
+  if (!toy) return;
+  simTime += dt;
+
+  const before = damage, dentBefore = dent;
+
+  if (pressing) {
+    damage = Math.min(1, damage + dt / BREAK_T);
+    dent = Math.max(dent, damage);
+  } else {
+    if (damage > 0) damage = Math.max(0, damage - dt / HEAL_T);      // 균열이 메워진다
+    if (dent > 0) dent = Math.max(0, dent - dt / DENT_HEAL_T);       // 패임은 더 늦게 펴진다
+  }
+
+  if (damage !== before || dent !== dentBefore) applyDamage(damage, dent);
+
+  // 완전히 아물면 잘게 쪼갰던 조각을 원래 크기로 되돌린다 (안 그러면 계속 잘아진다)
+  if (repeats > 0 && !pressing && damage === 0 && dent === 0) {
+    repeats = 0;
+    build();
+    return;
+  }
+
+}
+window.__step = step;   // 화면 없이 검증할 때 시간을 수동으로 돌리는 훅
+
+/* ═══════════════════════════════════════════════════════════
+   입력 — 공을 끌면 창 이동, 그냥 누르면 파열
+   (투명 영역은 클릭이 뒤로 통과하므로 드래그 손잡이도 공이 맡는다)
+   ═══════════════════════════════════════════════════════════ */
+let drag = null;
+
+function startPress(point) {
+  if (point) {
+    const nd = point.clone().normalize();
+    // 아직 아물지 않은 같은 자리를 다시 누르면 그 부근이 더 잘게 부서진다
+    if (damage > .04 && nd.dot(pressDir) > .78) {
+      repeats++;
+      refineAt(nd, 2 + Math.min(2, repeats));
+    } else {
+      repeats = 0;
+    }
+    pressDir.copy(nd);
+  }
+  pressing = true;
+  startCrackSound();
+}
+
+function endPress() {
+  if (!pressing) return;
+  pressing = false;
+  stopCrackSound();          // 복구 소리는 내지 않는다
+}
+
+// 손가락을 떼기 전에, 누르고 있는 내내 균열이 자란다
+canvas.addEventListener("pointerdown", (ev) => {
+  if (!toy) return;
+  const target = pick(ev);
+  if (!target) return;
+  drag = { sx: ev.screenX, sy: ev.screenY, moved: false, origin: null };
+  startPress(target.point);           // 포인터 캡처가 실패해도 누름은 반드시 시작되게
+  try { canvas.setPointerCapture(ev.pointerId); } catch { /* 캡처는 있으면 좋은 정도 */ }
+  if (window.pywebview) window.pywebview.api.pos().then(p => { if (drag) drag.origin = p; });
+});
+
+addEventListener("pointermove", (ev) => {
+  if (!drag) return;
+  const dx = ev.screenX - drag.sx, dy = ev.screenY - drag.sy;
+  if (!drag.moved && Math.hypot(dx, dy) > 5) {
+    drag.moved = true;
+    endPress();                       // 끌기 시작하면 부수는 걸 멈추고 창을 옮긴다
+    canvas.classList.add("dragging");
+  }
+  if (drag.moved && drag.origin && window.pywebview)
+    window.pywebview.api.move(drag.origin[0] + dx, drag.origin[1] + dy);
+});
+
+addEventListener("pointerup", () => {
+  drag = null;
+  canvas.classList.remove("dragging");
+  endPress();
+});
+
+addEventListener("keydown", (ev) => {
+  if (ev.code !== "Space" || ev.repeat) return;
+  ev.preventDefault();
+  startPress(new THREE.Vector3(
+    (Math.random() - .5) * .6, (Math.random() - .5) * .6, 1).normalize());
+});
+
+addEventListener("keyup", (ev) => {
+  if (ev.code === "Space") endPress();
+});
+
+// 설정 버튼을 못 누르는 상황을 대비한 탈출구
+addEventListener("keydown", (ev) => {
+  if (ev.code === "Escape" && window.pywebview) window.pywebview.api.close();
+});
+
+/* ═══════════════════════════════════════════════════════════
+   설정 패널
+   ═══════════════════════════════════════════════════════════ */
+const panel = document.getElementById("panel");
+
+/** 위젯이 아주 작을 땐 설정이 들어갈 자리가 없어서, 여는 동안만 창을 늘린다 */
+function setWindowSize(w, h) {
+  if (window.pywebview) window.pywebview.api.resize(w, h);
+}
+
+document.getElementById("more").onclick = () => {
+  panel.classList.add("open");
+  setWindowSize(PANEL_SIZE[0], PANEL_SIZE[1]);
+};
+document.getElementById("panelClose").onclick = () => {
+  panel.classList.remove("open");
+  const s = SIZES[sizeName];
+  setWindowSize(s, s);
+};
+document.getElementById("quit").onclick = (e) => {
+  e.preventDefault();
+  if (window.pywebview) window.pywebview.api.close(); else window.close();
+};
+
+function buildUI() {
+  const cRow = document.getElementById("colors");
+
+  const syncColors = () => {
+    cRow.querySelectorAll(".swatch").forEach((s, i) =>
+      s.setAttribute("aria-pressed", COLORS[i] === color));
+    document.documentElement.style.setProperty("--accent", color.body);
+  };
+
+  COLORS.forEach(c => {
+    const b = document.createElement("button");
+    b.className = "swatch"; b.title = c.name;
+    b.style.background = `radial-gradient(circle at 32% 28%, ${c.core}, ${c.body})`;
+    b.onclick = () => { color = c; syncColors(); build(); };
+    cRow.appendChild(b);
+  });
+
+  const dRow = document.getElementById("designs");
+  Object.keys(DESIGNS).forEach(name => {
+    const b = document.createElement("button");
+    b.className = "chip"; b.textContent = name;
+    b.setAttribute("aria-pressed", name === design);
+    b.onclick = () => {
+      design = name;
+      dRow.querySelectorAll(".chip").forEach(s => s.setAttribute("aria-pressed", s === b));
+      color = COLORS[DESIGNS[name].pick];    // 디자인마다 어울리는 색으로 시작
+      syncColors();
+      build();
+    };
+    dRow.appendChild(b);
+  });
+
+  const sRow = document.getElementById("sizes");
+  Object.keys(SIZES).forEach(name => {
+    const b = document.createElement("button");
+    b.className = "chip"; b.textContent = name;
+    b.setAttribute("aria-pressed", name === sizeName);
+    b.onclick = () => {
+      sizeName = name;
+      sRow.querySelectorAll(".chip").forEach(s => s.setAttribute("aria-pressed", s === b));
+    };
+    sRow.appendChild(b);
+  });
+
+  syncColors();
+}
+
+note("three " + (window.THREE ? THREE.REVISION : "없음"));
+buildUI();
+note("UI 완료");
+build();
+note("조각 " + toy.plates.length + "개 생성 완료");
+animate();
+requestAnimationFrame(() => note("첫 프레임 그림"));
+</script>
+</body>
+</html>
