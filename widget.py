@@ -154,16 +154,20 @@ class Api:
     """HTML 쪽에서 window.pywebview.api 로 부르는 창 제어."""
 
     def __init__(self) -> None:
-        self.window: webview.Window | None = None
+        # pywebview 는 이 객체의 공개 속성을 JS 로 노출하려고 dir() 로 훑는다.
+        # 여기에 Window 를 그냥 담아 두면 WinForms 폼의 .NET 속성 체인
+        # (Bounds.Empty.Empty…) 을 끝없이 파고들다 재귀 한계 오류와 COM 스레드
+        # 오류를 콘솔에 쏟아낸다. 밑줄로 시작하는 이름은 건너뛰므로 숨긴다.
+        self._window: webview.Window | None = None
 
     def pos(self) -> list[int]:
-        return [self.window.x, self.window.y]
+        return [self._window.x, self._window.y]
 
     def move(self, x: float, y: float) -> None:
-        self.window.move(int(x), int(y))
+        self._window.move(int(x), int(y))
 
     def resize(self, w: float, h: float) -> None:
-        self.window.resize(int(w), int(h))
+        self._window.resize(int(w), int(h))
 
     def log(self, msg: str) -> None:
         """페이지가 어디까지 진행됐는지 남긴다. 창이 멎으면 이 기록이 유일한 단서다."""
@@ -287,7 +291,7 @@ def main() -> None:
     log(f"시작 (모드={mode})")
 
     api = Api()
-    api.window = webview.create_window(
+    api._window = webview.create_window(
         "왁뿌볼",
         # 경로를 그대로 넘기면 pywebview 가 내장 HTTP 서버로 서빙하는데,
         # 그 서버가 오디오 프리로드 같은 동시 요청을 잘 못 버텨 창이 멎었다.
@@ -312,7 +316,7 @@ def main() -> None:
         ensure_shortcut()
 
     icon = str(ICON) if ICON.exists() else None
-    webview.start(on_start, api.window, icon=icon)
+    webview.start(on_start, api._window, icon=icon)
 
 
 if __name__ == "__main__":
