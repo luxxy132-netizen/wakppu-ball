@@ -103,11 +103,33 @@ Write-Output $path
             creationflags=getattr(subprocess, "CREATE_NO_WINDOW", 0),
             timeout=30,
         )
-        if out.returncode != 0:
-            raise RuntimeError((out.stderr or "").strip()[:300])
-        return (out.stdout or "").strip()
+        if out.returncode == 0 and out.stdout.strip():
+            return out.stdout.strip()
+        raise RuntimeError((out.stderr or out.stdout or "").strip()[:300])
+    except Exception as exc:
+        # Smart App Control 이 켜진 PC 에서는 PowerShell 이 제한 언어 모드로 돌아
+        # New-Object -ComObject 가 막힌다. 그럴 땐 실행용 배치 파일로 대신한다.
+        log(f"바로가기 COM 실패, 배치로 대체: {exc!r}")
+        return _desktop_batch(target, args, workdir)
     finally:
         tmp.unlink(missing_ok=True)
+
+
+def _desktop_batch(target: str, args: str, workdir: str) -> str:
+    """.lnk 를 못 만들 때 쓰는 대체 실행 파일 (아이콘은 없지만 확실히 동작한다)."""
+    desktop = Path(os.path.expanduser("~")) / "Desktop"
+    if not desktop.exists():                       # OneDrive 로 옮겨진 경우
+        desktop = Path(os.path.expanduser("~")) / "OneDrive" / "Desktop"
+    desktop.mkdir(parents=True, exist_ok=True)
+
+    path = desktop / f"{SHORTCUT_NAME}.bat"
+    path.write_text(
+        "@echo off\r\n"
+        f'cd /d "{workdir}"\r\n'
+        f'start "" "{target}" {args}\r\n',
+        encoding="utf-8",
+    )
+    return str(path)
 
 
 def ensure_shortcut() -> None:

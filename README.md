@@ -30,14 +30,49 @@ GitHub이 릴리스 자산 파일명에서 한글을 지워 버리기 때문입�
   `추가 정보` → `실행`을 누르면 됩니다.
 - 실행 기록은 exe 옆에 `wakppu.log`로 남습니다
 
-### 방법 2 — 소스에서 실행
+### 방법 2 — 소스에서 실행 (Smart App Control 이 켜진 PC)
 
-Windows 10/11 + Python 3.10 이상이 필요합니다.
+Releases 에서 `WakppuBall-source.zip` 을 받아 풀고 **`시작하기.bat`** 을 더블클릭하세요.
+Python 이 없으면 설치 페이지를 열어 주고, 처음 한 번은 필요한 구성요소를 자동으로 받습니다.
+
+직접 하시려면:
 
 ```bash
 pip install pywebview
 python widget.py
 ```
+
+Windows 10/11 + Python 3.10 이상이 필요합니다.
+
+## 실행이 막힐 때
+
+exe 에 코드 서명이 없어서 Windows 가 경고하거나 막을 수 있습니다. 둘은 다른 기능입니다.
+
+| | SmartScreen | Smart App Control (SAC) |
+|---|---|---|
+| 증상 | "Windows의 PC 보호" 창 | 아무 반응 없이 실행 안 됨 |
+| 우회 | `추가 정보` → `실행` | **없음** |
+
+먼저 어느 쪽인지 확인하세요.
+
+```bash
+powershell -Command "(Get-ItemProperty 'HKLM:\SYSTEM\CurrentControlSet\Control\CI\Policy' -Name VerifiedAndReputablePolicyState -EA 0).VerifiedAndReputablePolicyState"
+```
+
+`0` 이면 꺼짐, `1` 이면 켜짐, `2` 면 평가 모드입니다.
+
+- **`0` (대부분의 PC)** — SmartScreen 만 뜹니다. `추가 정보` → `실행`, 또는 파일 우클릭 →
+  속성 → `차단 해제`. USB 로 직접 주고받으면 아예 안 뜹니다.
+- **`1`** — exe 는 어떤 방법으로도 실행되지 않습니다. **방법 2(소스 실행)** 를 쓰세요.
+  SAC 를 끄는 방법도 있지만 **한 번 끄면 Windows 를 새로 설치해야 다시 켤 수 있습니다.**
+
+### 친구에게 전달할 때
+
+| 전달 방식 | 인터넷 표식(MOTW) | SmartScreen |
+|---|---|---|
+| USB · 외장하드 | 안 붙음 | 안 뜸 |
+| 카톡 · 메일 · 드라이브 | 붙음 | 뜸 |
+| 다운로드한 zip 을 압축 해제 | 전파됨 | 뜸 |
 
 콘솔 창 없이 띄우려면 `pythonw.exe widget.py`, 또는 `왁뿌볼.bat`을 실행하세요.
 
