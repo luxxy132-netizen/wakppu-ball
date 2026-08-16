@@ -96,7 +96,8 @@
   <div class="foot">
     공을 꾹 누르면 누른 만큼 부서지고, 손을 떼면 다시 붙습니다<br />
     끌면 창이 움직입니다 · 스페이스바로도 누를 수 있습니다<br />
-    <a href="#" id="quit">위젯 종료</a>
+    <a href="#" id="shortcut">바탕화면에 바로가기 만들기</a> · <a href="#" id="quit">위젯 종료</a>
+    <span id="shortcutMsg"></span>
   </div>
 </div>
 
@@ -787,6 +788,16 @@ document.getElementById("panelClose").onclick = () => {
 document.getElementById("quit").onclick = (e) => {
   e.preventDefault();
   if (window.pywebview) window.pywebview.api.close(); else window.close();
+};
+
+document.getElementById("shortcut").onclick = (e) => {
+  e.preventDefault();
+  const msg = document.getElementById("shortcutMsg");
+  if (!window.pywebview) { msg.textContent = " — 브라우저에서는 안 됩니다"; return; }
+  msg.textContent = " — 만드는 중…";
+  window.pywebview.api.make_shortcut()
+    .then(r => { msg.textContent = " — " + r; })
+    .catch(err => { msg.textContent = " — 실패: " + err; });
 };
 
 function buildUI() {

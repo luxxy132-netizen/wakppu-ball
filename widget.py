@@ -20,7 +20,10 @@
 무슨 일이 있었는지는 wakppu\\wakppu.log 에 남는다.
 """
 
+import os
+import subprocess
 import sys
+import tempfile
 import time
 from pathlib import Path
 
@@ -44,11 +47,85 @@ CHROMA = (1, 2, 3)
 OPAQUE_BG = "#201E28"
 START_SIZE = 150
 
+SHORTCUT_NAME = "왁뿌볼"
+# 바로가기를 한 번 만들었는지 기억하는 곳. exe 옆이 아니라 여기 둬야
+# exe 를 읽기 전용 폴더에 둬도 되고, 사용자가 바로가기를 지웠을 때 되살아나지 않는다.
+STATE_DIR = Path(os.environ.get("LOCALAPPDATA") or Path.home()) / "wakppu"
+
 
 def log(msg: str) -> None:
     stamp = time.strftime("%H:%M:%S")
     with LOG.open("a", encoding="utf-8") as f:
         f.write(f"[{stamp}] {msg}\n")
+
+
+def _launch_target() -> tuple[str, str, str]:
+    """바로가기가 가리켜야 할 (실행파일, 인자, 작업폴더)."""
+    if getattr(sys, "frozen", False):
+        exe = str(Path(sys.executable).resolve())
+        return exe, "", str(Path(exe).parent)
+
+    # 소스로 돌릴 때는 콘솔이 안 뜨는 pythonw 를 쓴다
+    pyw = Path(sys.executable).with_name("pythonw.exe")
+    py = str(pyw if pyw.exists() else Path(sys.executable))
+    return py, f'"{Path(__file__).resolve()}"', str(BASE)
+
+
+def create_shortcut() -> str:
+    """바탕화면에 바로가기를 만들고 그 경로를 돌려준다.
+
+    바탕화면 경로는 OneDrive 로 옮겨져 있을 수 있어 직접 조립하지 않고
+    Windows 에게 물어본다. 그래서 PowerShell 을 거친다.
+    """
+    target, args, workdir = _launch_target()
+    icon = target if getattr(sys, "frozen", False) else str(ICON)
+
+    script = f"""
+$ws = New-Object -ComObject WScript.Shell
+$path = Join-Path ([Environment]::GetFolderPath('Desktop')) '{SHORTCUT_NAME}.lnk'
+$sc = $ws.CreateShortcut($path)
+$sc.TargetPath = '{target}'
+$sc.Arguments = '{args}'
+$sc.WorkingDirectory = '{workdir}'
+$sc.Description = '왁뿌볼 - 누르면 왁스가 갈라지는 데스크탑 ASMR 위젯'
+$sc.WindowStyle = 7
+$sc.IconLocation = '{icon},0'
+$sc.Save()
+Write-Output $path
+"""
+    # 한글이 깨지지 않도록 BOM 붙인 UTF-8 파일로 넘긴다
+    tmp = Path(tempfile.gettempdir()) / "wakppu_shortcut.ps1"
+    tmp.write_text(script, encoding="utf-8-sig")
+    try:
+        out = subprocess.run(
+            ["powershell", "-NoProfile", "-ExecutionPolicy", "Bypass", "-File", str(tmp)],
+            capture_output=True, text=True, encoding="utf-8", errors="replace",
+            creationflags=getattr(subprocess, "CREATE_NO_WINDOW", 0),
+            timeout=30,
+        )
+        if out.returncode != 0:
+            raise RuntimeError((out.stderr or "").strip()[:300])
+        return (out.stdout or "").strip()
+    finally:
+        tmp.unlink(missing_ok=True)
+
+
+def ensure_shortcut() -> None:
+    """처음 실행할 때 한 번만 바로가기를 만든다.
+
+    exe 는 설치 과정이 없는 단일 파일이라 그냥 두면 바로가기가 생기지 않는다.
+    지운 바로가기가 매번 되살아나면 곤란하므로 표식을 남겨 두 번은 만들지 않는다.
+    """
+    marker = STATE_DIR / "shortcut_created"
+    if marker.exists():
+        return
+    try:
+        path = create_shortcut()
+        STATE_DIR.mkdir(parents=True, exist_ok=True)
+        marker.write_text(path, encoding="utf-8")
+        log(f"바로가기 생성: {path}")
+    except Exception as exc:
+        log(f"바로가기 생성 실패: {exc!r}")
 
 
 class Api:
@@ -69,6 +146,18 @@ class Api:
     def log(self, msg: str) -> None:
         """페이지가 어디까지 진행됐는지 남긴다. 창이 멎으면 이 기록이 유일한 단서다."""
         log(f"[page] {msg}")
+
+    def make_shortcut(self) -> str:
+        """⋯ 메뉴의 '바탕화면에 바로가기' 버튼."""
+        try:
+            path = create_shortcut()
+            STATE_DIR.mkdir(parents=True, exist_ok=True)
+            (STATE_DIR / "shortcut_created").write_text(path, encoding="utf-8")
+            log(f"바로가기 생성(수동): {path}")
+            return "바탕화면에 만들었습니다"
+        except Exception as exc:
+            log(f"바로가기 생성 실패(수동): {exc!r}")
+            return "실패했습니다 (wakppu.log 확인)"
 
     def close(self) -> None:
         for w in webview.windows:
@@ -195,11 +284,13 @@ def main() -> None:
         shadow=False,
     )
 
+    def on_start(window: webview.Window) -> None:
+        if not opaque:
+            (punch_background if chroma else punch_dwm)(window)
+        ensure_shortcut()
+
     icon = str(ICON) if ICON.exists() else None
-    if opaque:
-        webview.start(icon=icon)
-    else:
-        webview.start(punch_background if chroma else punch_dwm, api.window, icon=icon)
+    webview.start(on_start, api.window, icon=icon)
 
 
 if __name__ == "__main__":
