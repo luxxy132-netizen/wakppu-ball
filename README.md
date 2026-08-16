@@ -9,8 +9,12 @@
 
 ### 방법 1 — exe (Python 없이)
 
-[Releases](../../releases)에서 `왁뿌볼.exe`를 받아 원하는 폴더에 두고 실행하면 끝입니다.
+[Releases](../../releases)에서 `WakppuBall.exe`를 받아 원하는 폴더에 두고 실행하면 끝입니다.
 설치 과정이 없고 레지스트리도 건드리지 않습니다. 지우고 싶으면 파일만 삭제하세요.
+
+받은 뒤 `왁뿌볼.exe`로 이름을 바꿔도 그대로 동작합니다. 파일명이 영문인 이유는
+GitHub이 릴리스 자산 파일명에서 한글을 지워 버리기 때문입니다. 속성창·작업관리자에는
+`왁뿌볼`로 표시됩니다.
 
 - Windows 10/11 · WebView2 런타임 필요 (Windows 11은 기본 탑재, Windows 10도 Edge가 있으면 대부분 설치되어 있음)
 - 위젯에 필요한 모든 것(3D 라이브러리 · 음원 · 아이콘)이 exe 한 파일에 들어 있습니다
@@ -77,6 +81,7 @@ vendor/three.min.js
 sfx/               누를 때 재생되는 파열음
 wakppu.ico         16~256px 6단계 아이콘 (위젯을 직접 렌더해서 만듦)
 wakppu.spec        PyInstaller 빌드 설정
+version_info.txt   exe 속성창에 표시될 이름 (한글)
 ```
 
 ### exe 직접 빌드하기

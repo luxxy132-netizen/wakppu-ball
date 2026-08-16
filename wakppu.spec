@@ -38,7 +38,9 @@ exe = EXE(
     a.binaries,
     a.datas,
     [],
-    name="왁뿌볼",
+    # GitHub 릴리스는 자산 파일명에서 한글을 지워 default.exe 로 만들어 버린다.
+    # 파일명은 ASCII 로 두고, 속성창·작업관리자에 뜨는 이름은 version_info 로 한글이 되게 한다.
+    name="WakppuBall",
     debug=False,
     bootloader_ignore_signals=False,
     strip=False,
@@ -46,4 +48,5 @@ exe = EXE(
     runtime_tmpdir=None,
     console=False,          # 검은 콘솔 창 없이 위젯만 뜬다
     icon="wakppu.ico",
+    version="version_info.txt",
 )
