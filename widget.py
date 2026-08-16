@@ -26,10 +26,17 @@ from pathlib import Path
 
 import webview
 
-HERE = Path(__file__).resolve().parent
+# exe 로 묶으면 자원은 임시 폴더에 풀리고(_MEIPASS) 그 폴더는 종료 때 사라진다.
+# 로그처럼 남겨야 하는 파일은 exe 옆에 써야 한다.
+if getattr(sys, "frozen", False):
+    HERE = Path(sys._MEIPASS)                 # index.html · vendor · sfx · 아이콘
+    BASE = Path(sys.executable).resolve().parent
+else:
+    HERE = BASE = Path(__file__).resolve().parent
+
 PAGE = HERE / "index.html"
-LOG = HERE / "wakppu.log"
 ICON = HERE / "wakppu.ico"
+LOG = BASE / "wakppu.log"
 
 # 이 색으로 칠해진 픽셀이 통째로 뚫린다. 장난감에 우연히 나올 일 없는 값으로 고른다.
 CHROMA = (1, 2, 3)
@@ -196,4 +203,11 @@ def main() -> None:
 
 
 if __name__ == "__main__":
-    main()
+    try:
+        main()
+    except Exception:
+        # exe 는 콘솔이 없어 오류가 그냥 사라진다. 반드시 로그로 남긴다.
+        import traceback
+
+        log("치명적 오류\n" + traceback.format_exc())
+        raise

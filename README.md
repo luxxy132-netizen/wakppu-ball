@@ -5,9 +5,22 @@
 
 ![designs](docs/designs.png)
 
-## 실행
+## 설치
 
-Windows 10/11 + Python 3.10 이상이 필요합니다. (WebView2 런타임은 Windows 11에 기본 탑재)
+### 방법 1 — exe (Python 없이)
+
+[Releases](../../releases)에서 `왁뿌볼.exe`를 받아 원하는 폴더에 두고 실행하면 끝입니다.
+설치 과정이 없고 레지스트리도 건드리지 않습니다. 지우고 싶으면 파일만 삭제하세요.
+
+- Windows 10/11 · WebView2 런타임 필요 (Windows 11은 기본 탑재, Windows 10도 Edge가 있으면 대부분 설치되어 있음)
+- 위젯에 필요한 모든 것(3D 라이브러리 · 음원 · 아이콘)이 exe 한 파일에 들어 있습니다
+- 처음 실행할 때 Windows SmartScreen 경고가 뜰 수 있습니다. 서명하지 않은 개인 빌드라 그렇습니다.
+  `추가 정보` → `실행`을 누르면 됩니다.
+- 실행 기록은 exe 옆에 `wakppu.log`로 남습니다
+
+### 방법 2 — 소스에서 실행
+
+Windows 10/11 + Python 3.10 이상이 필요합니다.
 
 ```bash
 pip install pywebview
@@ -62,7 +75,20 @@ widget.py          pywebview 창 (투명 처리 · 창 이동/크기 · 종료)
 index.html         위젯 전체 (3D · 상호작용 · 소리)
 vendor/three.min.js
 sfx/               누를 때 재생되는 파열음
+wakppu.ico         16~256px 6단계 아이콘 (위젯을 직접 렌더해서 만듦)
+wakppu.spec        PyInstaller 빌드 설정
 ```
+
+### exe 직접 빌드하기
+
+```bash
+pip install pyinstaller
+pyinstaller wakppu.spec --noconfirm --clean
+```
+
+`dist/왁뿌볼.exe` 한 파일로 나옵니다. `index.html`·`three.min.js`·음원·아이콘이 모두 안에
+들어가고, 실행하면 임시 폴더에 풀린 뒤 `file://`로 열립니다. 로그만은 사라지지 않도록
+exe 옆에 씁니다.
 
 문제가 생기면 `wakppu.log`에 페이지 진행 상황과 자바스크립트 오류가 남습니다.
 

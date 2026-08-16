@@ -1,3 +1,7 @@
 __pycache__/
 *.pyc
 wakppu.log
+
+# PyInstaller 산출물. exe 는 Releases 로 배포한다.
+build/
+dist/
