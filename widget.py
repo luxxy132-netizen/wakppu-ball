@@ -290,6 +290,11 @@ def main() -> None:
     mode = "opaque" if opaque else ("색상키" if chroma else "dwm")
     log(f"시작 (모드={mode})")
 
+    # pywebview 는 기본적으로 클릭한 요소의 부모까지 거슬러 올라가며 드래그 영역을
+    # 찾는다. 그래서 패널 헤더 안의 ✕ 를 눌러도 헤더가 잡혀 창이 끌려다녔다.
+    # 이 옵션을 켜면 드래그 영역 자체를 직접 눌렀을 때만 창이 움직인다.
+    webview.settings["DRAG_REGION_DIRECT_TARGET_ONLY"] = True
+
     api = Api()
     api._window = webview.create_window(
         "왁뿌볼",

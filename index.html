@@ -23,7 +23,7 @@
   /* ⋯ 버튼. 투명 영역은 클릭이 뒤로 통과하므로 항상 최소한의 불투명도를 유지한다 */
   #more {
     position: fixed; top: 6px; right: 6px;
-    width: 22px; height: 22px;
+    width: 30px; height: 30px;
     border: 0; border-radius: 50%;
     /* 순수 검정은 창 배경으로 취급돼 뚫려 버리므로 확실히 다른 색을 쓴다 */
     background: rgba(74, 68, 92, .55);
@@ -48,23 +48,23 @@
   .head b { font-size: 12px; }
   .head .close { margin-left: auto; }
   .head button {
-    width: 22px; height: 22px; border: 0; border-radius: 6px;
+    width: 30px; height: 30px; border: 0; border-radius: 8px;
     background: transparent; color: #8d86a0; cursor: pointer; font-size: 13px;
   }
   .head button:hover { background: #3a2430; color: #ff9aa6; }
 
   .label { color: #8d86a0; font-size: 10px; letter-spacing: .06em; margin-bottom: 5px; }
-  .grid { display: flex; flex-wrap: wrap; gap: 5px; }
+  .grid { display: flex; flex-wrap: wrap; gap: 7px; }
 
   .swatch {
-    width: 22px; height: 22px; border-radius: 50%;
+    width: 30px; height: 30px; border-radius: 50%;
     border: 2px solid transparent; padding: 0; cursor: pointer;
     box-shadow: inset 0 -4px 6px rgba(0,0,0,.25), inset 0 4px 5px rgba(255,255,255,.55);
   }
   .swatch[aria-pressed="true"] { border-color: #fff; transform: scale(1.12); }
 
   .chip {
-    flex: 1 1 0; min-width: 52px; padding: 6px 0;
+    flex: 1 1 0; min-width: 56px; padding: 10px 0;
     font-size: 10.5px; font-family: inherit;
     color: #8d86a0; background: #1d1a24;
     border: 1px solid #34303f; border-radius: 8px; cursor: pointer;
@@ -154,7 +154,7 @@ const BREAK_T = 1.0;      // 꾹 눌러 완전히 부서지기까지 걸리는 �
 
 // 창 자체를 키우고 줄여서 왁뿌볼 크기를 바꾼다 (프레임 없는 창이라 테두리로는 못 잡는다)
 const SIZES = { "아주작게": 110, "작게": 150, "보통": 200, "크게": 280 };
-const PANEL_SIZE = [292, 330];   // 설정을 여는 동안만 잠깐 늘어나는 크기
+const PANEL_SIZE = [304, 384];   // 설정을 여는 동안만 잠깐 늘어나는 크기
 
 const R = 1;              // 기준 반지름
 const SHARDS = 17;        // 껍질 조각 수 (불규칙 보로노이)
@@ -800,6 +800,19 @@ document.getElementById("shortcut").onclick = (e) => {
     .catch(err => { msg.textContent = " — 실패: " + err; });
 };
 
+/**
+ * 버튼을 누른 티는 즉시 나고, 무거운 재생성은 다음 프레임으로 미룬다.
+ * 연달아 누르면 마지막 것만 한 번 만든다. 예전엔 클릭 핸들러 안에서
+ * 바로 만드느라 누를 때마다 화면이 잠깐 멈춰 "안 눌린다"는 느낌을 줬다.
+ */
+let buildQueued = false;
+
+function scheduleBuild() {
+  if (buildQueued) return;
+  buildQueued = true;
+  requestAnimationFrame(() => { buildQueued = false; build(); });
+}
+
 function buildUI() {
   const cRow = document.getElementById("colors");
 
@@ -813,7 +826,7 @@ function buildUI() {
     const b = document.createElement("button");
     b.className = "swatch"; b.title = c.name;
     b.style.background = `radial-gradient(circle at 32% 28%, ${c.core}, ${c.body})`;
-    b.onclick = () => { color = c; syncColors(); build(); };
+    b.onclick = () => { color = c; syncColors(); scheduleBuild(); };
     cRow.appendChild(b);
   });
 
@@ -827,7 +840,7 @@ function buildUI() {
       dRow.querySelectorAll(".chip").forEach(s => s.setAttribute("aria-pressed", s === b));
       color = COLORS[DESIGNS[name].pick];    // 디자인마다 어울리는 색으로 시작
       syncColors();
-      build();
+      scheduleBuild();
     };
     dRow.appendChild(b);
   });
