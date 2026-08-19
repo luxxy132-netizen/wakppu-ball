@@ -454,23 +454,23 @@ function fracture(baseGeo, seeds) {
  * 사진처럼 양 끝이 도톰하고 가운데가 들어간 땅콩 실루엣이 나온다.
  */
 function makeSoapGeometry() {
-  const geo = new THREE.SphereGeometry(1, 64, 40);
+  const geo = new THREE.SphereGeometry(1, 72, 48);
   const pos = geo.attributes.position;
   const v = new THREE.Vector3();
 
-  // 길이 방향 위치 u 에서의 단면 반폭.
-  // 구를 그냥 눌러 조이면 원래 가운데가 제일 두꺼워서 아무리 조여도 밋밋하다.
-  // 단면 폭을 직접 정해 주면 사진처럼 양 끝이 도톰하고 허리가 확실히 들어간다.
-  const profile = (u) =>
-    Math.pow(Math.max(0, 1 - Math.pow(Math.abs(u), 4)), 1 / 2.2) *   // 뭉툭한 모서리
-    (1 - .32 * Math.exp(-Math.pow(u * 2.6, 2)));                     // 잘록한 허리
+  const A = 1.10, B = 0.88, C = 0.40;   // 반너비 · 반높이 · 반두께 (도면 비율 2.75:2.2:1)
+  const N = 4;                          // 클수록 모서리가 덜 둥글고 상자에 가까워진다
 
+  // 구의 각 방향을 초타원체 표면으로 밀어낸다. 구를 눌러 만드는 것과 달리
+  // 면이 평평하고 모서리만 둥글어서 비누처럼 각진 덩어리가 된다.
   for (let i = 0; i < pos.count; i++) {
     v.fromBufferAttribute(pos, i);
-    const r = Math.hypot(v.y, v.z);              // 이 지점의 원래 단면 반지름
-    const k = r > 1e-6 ? profile(v.x) / r : 1;   // 원하는 폭으로 다시 맞춘다
-    const S = .84;                               // 창 가장자리에 닿지 않게 살짝 줄인다
-    pos.setXYZ(i, v.x * 1.45 * S, v.y * k * .62 * S, v.z * k * S);
+    const b = B * (1 - .07 * Math.exp(-Math.pow(v.x * 2.6, 2)));   // 위아래를 아주 살짝 조인 허리
+    const s = Math.pow(
+      Math.pow(Math.abs(v.x) / A, N) +
+      Math.pow(Math.abs(v.y) / b, N) +
+      Math.pow(Math.abs(v.z) / C, N), -1 / N);
+    pos.setXYZ(i, v.x * s, v.y * s, v.z * s);
   }
   pos.needsUpdate = true;
   geo.computeVertexNormals();
