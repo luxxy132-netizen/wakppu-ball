@@ -45,6 +45,9 @@ exe = EXE(
     strip=False,
     upx=False,
     console=False,
+    # 애플 실리콘은 서명이 아예 없는 실행 파일을 거부한다.
+    # "-" 는 임시(ad-hoc) 서명이라 개발자 계정 없이도 붙일 수 있다.
+    codesign_identity="-",
 )
 
 coll = COLLECT(exe, a.binaries, a.datas, strip=False, upx=False, name="왁뿌볼")
