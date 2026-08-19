@@ -458,11 +458,12 @@ function makeSoapGeometry() {
   const pos = geo.attributes.position;
   const v = new THREE.Vector3();
 
-  const A = 1.10, B = 0.88, C = 0.40;   // 반너비 · 반높이 · 반두께 (도면 비율 2.75:2.2:1)
-  const N = 4;                          // 클수록 모서리가 덜 둥글고 상자에 가까워진다
+  const A = 1.10, B = 0.80, C = 0.40;   // 반너비 · 반높이 · 반두께
+  // 2 면 완전한 타원체, 4 면 거의 상자. 각지지 않으면서 판 느낌은 남는 지점.
+  const N = 2.6;
 
-  // 구의 각 방향을 초타원체 표면으로 밀어낸다. 구를 눌러 만드는 것과 달리
-  // 면이 평평하고 모서리만 둥글어서 비누처럼 각진 덩어리가 된다.
+  // 구의 각 방향을 초타원체 표면으로 밀어낸다. 구를 눌러 만들면 알약처럼
+  // 밋밋해지고, 지수를 크게 잡으면 상자처럼 각진다. 그 사이를 노린다.
   for (let i = 0; i < pos.count; i++) {
     v.fromBufferAttribute(pos, i);
     const b = B * (1 - .07 * Math.exp(-Math.pow(v.x * 2.6, 2)));   // 위아래를 아주 살짝 조인 허리
