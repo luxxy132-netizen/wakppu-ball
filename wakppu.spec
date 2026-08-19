@@ -16,6 +16,9 @@ a = Analysis(
         ("sfx/crack1.mp3", "sfx"),
         ("sfx/crack2.mp3", "sfx"),
         ("sfx/crack3.mp3", "sfx"),
+        ("sfx/soap1.mp3", "sfx"),
+        ("sfx/soap2.mp3", "sfx"),
+        ("sfx/soap3.mp3", "sfx"),
     ],
     hiddenimports=[
         "clr",

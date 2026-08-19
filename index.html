@@ -131,6 +131,7 @@ const COLORS = [
   { name: "스카이", body: "#7cc4f2", core: "#b8e0fb" },
   { name: "딸기",   body: "#f2607a", core: "#ffa8b8" },
   { name: "민트",   body: "#5fd6b4", core: "#9ff0d8" },
+  { name: "화이트", body: "#f1efe9", core: "#fbfaf6" },
 ];
 
 // tint = 고른 색을 껍질에 입힐지, 속살에 입힐지.
@@ -145,6 +146,9 @@ const DESIGNS = {
   // 반투명 젤리 안에 홀로그램 반짝이가 든 글리터 만두
   "만두":   { shape: "bun",    tint: "shell", pick: 2,
               gloss: 1, rough: .05, alpha: .72, sep: .85, glitter: true },
+  // 왁스 코팅이 없는 말랑이. 껍질이 없으니 갈라지지 않고 눌리기만 한다.
+  "비누크런치": { shape: "soap", tint: "core", pick: 7,
+                  sfx: ["sfx/soap1.mp3", "sfx/soap2.mp3", "sfx/soap3.mp3"] },
 };
 
 // tone = 몸통 대역 중심, low = 저역 울림 양, grains = 서걱거리는 파편 알갱이 수.
@@ -184,15 +188,21 @@ const pressDir = new THREE.Vector3(0, 0, 1);   // 누른 지점의 방향. 여�
  * 초당 수십 개의 오디오 노드가 쌓여 소리가 비트박스처럼 끊기고 위젯도 멎었다.
  * 누를 때 한 번 재생하고, 길게 누르면 끝나는 대로 다음 클립을 잇는다.
  */
-const CLIP_SRC = ["sfx/crack1.mp3", "sfx/crack2.mp3", "sfx/crack3.mp3"];
+const DEFAULT_SFX = ["sfx/crack1.mp3", "sfx/crack2.mp3", "sfx/crack3.mp3"];
 
-// 세 개를 한꺼번에 preload 하면 창이 뜨자마자 멎는 경우가 있어, 쓸 때 하나씩 만든다.
-const CLIPS = CLIP_SRC.map(src => {
-  const a = new Audio();
-  a.preload = "none";
-  a.src = src;
+// 한꺼번에 preload 하면 창이 뜨자마자 멎는 경우가 있어, 쓸 때 하나씩 만들어 재사용한다.
+const clipCache = new Map();
+
+function clipFor(src) {
+  let a = clipCache.get(src);
+  if (!a) {
+    a = new Audio();
+    a.preload = "none";
+    a.src = src;
+    clipCache.set(src, a);
+  }
   return a;
-});
+}
 
 let nowPlaying = null;
 let fadeTimer = null;
@@ -201,7 +211,8 @@ let audioBroken = false;
 function startCrackSound() {
   if (audioBroken) return;
   clearInterval(fadeTimer);
-  const a = CLIPS[(Math.random() * CLIPS.length) | 0];
+  const list = DESIGNS[design].sfx || DEFAULT_SFX;   // 디자인마다 제 소리를 쓴다
+  const a = clipFor(list[(Math.random() * list.length) | 0]);
   nowPlaying = a;
   a.onended = () => { if (pressing && nowPlaying === a) startCrackSound(); };
   a.onerror = () => { audioBroken = true; note("audio error: " + a.src); };
@@ -438,6 +449,34 @@ function fracture(baseGeo, seeds) {
   });
 }
 
+/**
+ * 비누 모양 몸통. 구를 길쭉한 판으로 눌러 놓고 허리를 잘록하게 조인다.
+ * 사진처럼 양 끝이 도톰하고 가운데가 들어간 땅콩 실루엣이 나온다.
+ */
+function makeSoapGeometry() {
+  const geo = new THREE.SphereGeometry(1, 64, 40);
+  const pos = geo.attributes.position;
+  const v = new THREE.Vector3();
+
+  // 길이 방향 위치 u 에서의 단면 반폭.
+  // 구를 그냥 눌러 조이면 원래 가운데가 제일 두꺼워서 아무리 조여도 밋밋하다.
+  // 단면 폭을 직접 정해 주면 사진처럼 양 끝이 도톰하고 허리가 확실히 들어간다.
+  const profile = (u) =>
+    Math.pow(Math.max(0, 1 - Math.pow(Math.abs(u), 4)), 1 / 2.2) *   // 뭉툭한 모서리
+    (1 - .32 * Math.exp(-Math.pow(u * 2.6, 2)));                     // 잘록한 허리
+
+  for (let i = 0; i < pos.count; i++) {
+    v.fromBufferAttribute(pos, i);
+    const r = Math.hypot(v.y, v.z);              // 이 지점의 원래 단면 반지름
+    const k = r > 1e-6 ? profile(v.x) / r : 1;   // 원하는 폭으로 다시 맞춘다
+    const S = .84;                               // 창 가장자리에 닿지 않게 살짝 줄인다
+    pos.setXYZ(i, v.x * 1.45 * S, v.y * k * .62 * S, v.z * k * S);
+  }
+  pos.needsUpdate = true;
+  geo.computeVertexNormals();
+  return geo;
+}
+
 /** 조각 하나에 성격을 부여한다 (가라앉음·꺾임·미끄러짐) */
 function dressPlate(m, n, home, sepScale) {
   m.userData.n = n;
@@ -515,7 +554,10 @@ function build() {
 
   let shellGeo, seeds, core;
 
-  if (D.shape === "stick") {
+  if (D.shape === "soap") {
+    // 왁스 코팅이 없는 말랑이. 껍질 없이 클레이 몸통 하나뿐이라 갈라지지 않는다.
+    core = new THREE.Mesh(makeSoapGeometry(), coreMat);
+  } else if (D.shape === "stick") {
     const L = 2.1, T = .92;
     const half = new THREE.Vector3(L / 2, T / 2, T / 2);
     shellGeo = new THREE.BoxGeometry(L, T, T, 44, 22, 22).toNonIndexed();
@@ -537,19 +579,23 @@ function build() {
     core = new THREE.Mesh(new THREE.SphereGeometry(R * .93, 32, 20), coreMat);
   }
 
-  const shellMat = new THREE.MeshPhysicalMaterial({
-    map: D.shape === "stick" ? makeStickTexture() : makeShellTexture(),
-    color: 0xffffff, side: THREE.DoubleSide,
-    roughness: D.rough, metalness: 0,
-    clearcoat: D.gloss, clearcoatRoughness: .06,
-    transparent: D.alpha < 1, opacity: D.alpha,
-  });
-  materials.push(shellMat);
+  // 껍질이 없는 디자인은 조각도 없다 → 갈라지는 연출 자체가 일어나지 않는다
+  let plates = [];
+  if (shellGeo) {
+    const shellMat = new THREE.MeshPhysicalMaterial({
+      map: D.shape === "stick" ? makeStickTexture() : makeShellTexture(),
+      color: 0xffffff, side: THREE.DoubleSide,
+      roughness: D.rough, metalness: 0,
+      clearcoat: D.gloss, clearcoatRoughness: .06,
+      transparent: D.alpha < 1, opacity: D.alpha,
+    });
+    materials.push(shellMat);
 
-  // 조각마다 고유한 가라앉음·꺾임 성향을 한 번 정해 두면 균열이 규칙적으로 안 보인다
-  const plates = fracture(shellGeo, seeds).map(({ geo, n, c }) =>
-    dressPlate(new THREE.Mesh(geo, shellMat), n, c.clone(), D.sep));
-  plates.forEach(p => group.add(p));
+    // 조각마다 고유한 가라앉음·꺾임 성향을 한 번 정해 두면 균열이 규칙적으로 안 보인다
+    plates = fracture(shellGeo, seeds).map(({ geo, n, c }) =>
+      dressPlate(new THREE.Mesh(geo, shellMat), n, c.clone(), D.sep));
+    plates.forEach(p => group.add(p));
+  }
   group.add(core);
 
   if (D.knot) {
