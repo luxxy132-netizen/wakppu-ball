@@ -30,6 +30,26 @@ GitHub이 릴리스 자산 파일명에서 한글을 지워 버리기 때문입�
   `추가 정보` → `실행`을 누르면 됩니다.
 - 실행 기록은 exe 옆에 `wakppu.log`로 남습니다
 
+### macOS
+
+`.exe` 는 Windows 전용이라 맥에서는 실행되지 않습니다. 맥용은 **맥에서 직접 빌드**해야 합니다
+(PyInstaller 는 다른 OS 용 실행 파일을 만들지 못합니다).
+
+소스로 바로 실행하려면 `WakppuBall-source.zip` 을 풀고 **`시작하기.command`** 를 더블클릭하세요.
+필요한 것을 알아서 설치하고 실행합니다. 처음엔 "확인되지 않은 개발자" 경고가 뜨는데
+**우클릭 → 열기** 를 고르면 넘어갑니다.
+
+`.app` 으로 묶으려면:
+
+```bash
+pip3 install pywebview pyobjc-core pyobjc-framework-Cocoa pyobjc-framework-WebKit pyinstaller
+pyinstaller wakppu-mac.spec --noconfirm --clean
+```
+
+`dist/왁뿌볼.app` 이 나옵니다. 맥에서는 pywebview 가 창을 직접 투명하게 만들어 줘서
+Windows 에서 쓰는 우회 처리가 필요 없습니다. 바탕화면 바로가기는 `.lnk` 대신
+앱을 가리키는 심볼릭 링크로 만듭니다.
+
 ### 방법 2 — 소스에서 실행 (Smart App Control 이 켜진 PC)
 
 Releases 에서 `WakppuBall-source.zip` 을 받아 풀고 **`시작하기.bat`** 을 더블클릭하세요.
@@ -125,7 +145,10 @@ index.html         위젯 전체 (3D · 상호작용 · 소리)
 vendor/three.min.js
 sfx/               누를 때 재생되는 파열음
 wakppu.ico         16~256px 6단계 아이콘 (위젯을 직접 렌더해서 만듦)
-wakppu.spec        PyInstaller 빌드 설정
+wakppu.spec        PyInstaller 빌드 설정 (Windows)
+wakppu-mac.spec    PyInstaller 빌드 설정 (macOS · 맥에서 실행할 것)
+wakppu.icns        macOS 아이콘
+시작하기.bat / .command   소스로 바로 실행 (Windows / macOS)
 version_info.txt   exe 속성창에 표시될 이름 (한글)
 ```
 

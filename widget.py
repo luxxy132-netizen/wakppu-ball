@@ -38,7 +38,11 @@ else:
     HERE = BASE = Path(__file__).resolve().parent
 
 PAGE = HERE / "index.html"
-ICON = HERE / "wakppu.ico"
+IS_WIN = sys.platform == "win32"
+IS_MAC = sys.platform == "darwin"
+
+# 맥은 .icns, 윈도우는 .ico 를 쓴다
+ICON = HERE / ("wakppu.icns" if IS_MAC else "wakppu.ico")
 LOG = BASE / "wakppu.log"
 
 # 이 색으로 칠해진 픽셀이 통째로 뚫린다. 장난감에 우연히 나올 일 없는 값으로 고른다.
@@ -65,10 +69,33 @@ def _launch_target() -> tuple[str, str, str]:
         exe = str(Path(sys.executable).resolve())
         return exe, "", str(Path(exe).parent)
 
-    # 소스로 돌릴 때는 콘솔이 안 뜨는 pythonw 를 쓴다
+    # 소스로 돌릴 때는 콘솔 창이 안 뜨는 pythonw 를 쓴다 (윈도우 전용)
     pyw = Path(sys.executable).with_name("pythonw.exe")
     py = str(pyw if pyw.exists() else Path(sys.executable))
     return py, f'"{Path(__file__).resolve()}"', str(BASE)
+
+
+def _mac_app_path() -> Path:
+    """맥에서 실행 중인 .app 번들 경로 (소스로 돌릴 때는 소스 폴더)."""
+    if not getattr(sys, "frozen", False):
+        return BASE
+    # .app/Contents/MacOS/왁뿌볼 → .app
+    exe = Path(sys.executable).resolve()
+    for parent in exe.parents:
+        if parent.suffix == ".app":
+            return parent
+    return exe.parent
+
+
+def _mac_shortcut() -> str:
+    """맥에는 .lnk 가 없다. 바탕화면에 앱을 가리키는 심볼릭 링크를 둔다."""
+    desktop = Path.home() / "Desktop"
+    desktop.mkdir(parents=True, exist_ok=True)
+    link = desktop / SHORTCUT_NAME
+    if link.is_symlink() or link.exists():
+        link.unlink()
+    link.symlink_to(_mac_app_path())
+    return str(link)
 
 
 def create_shortcut() -> str:
@@ -77,6 +104,9 @@ def create_shortcut() -> str:
     바탕화면 경로는 OneDrive 로 옮겨져 있을 수 있어 직접 조립하지 않고
     Windows 에게 물어본다. 그래서 PowerShell 을 거친다.
     """
+    if IS_MAC:
+        return _mac_shortcut()
+
     target, args, workdir = _launch_target()
     icon = target if getattr(sys, "frozen", False) else str(ICON)
 
@@ -287,8 +317,10 @@ def punch_background(window: webview.Window) -> None:
 def main() -> None:
     opaque = "--opaque" in sys.argv
     chroma = "--chroma" in sys.argv     # 예전 색상키 방식. 투명하지만 클릭이 전부 통과한다.
-    mode = "opaque" if opaque else ("색상키" if chroma else "dwm")
-    log(f"시작 (모드={mode})")
+    # 맥은 pywebview 가 창을 직접 투명하게 만들어 줘서(setOpaque(False) +
+    # drawsTransparentBackground) 윈도우에서 쓰는 DWM 우회가 필요 없다.
+    mode = "opaque" if opaque else ("mac" if IS_MAC else ("색상키" if chroma else "dwm"))
+    log(f"시작 (모드={mode}, 플랫폼={sys.platform})")
 
     # pywebview 는 기본적으로 클릭한 요소의 부모까지 거슬러 올라가며 드래그 영역을
     # 찾는다. 그래서 패널 헤더 안의 ✕ 를 눌러도 헤더가 잡혀 창이 끌려다녔다.
@@ -316,7 +348,7 @@ def main() -> None:
     )
 
     def on_start(window: webview.Window) -> None:
-        if not opaque:
+        if IS_WIN and not opaque:
             (punch_background if chroma else punch_dwm)(window)
         ensure_shortcut()
 
