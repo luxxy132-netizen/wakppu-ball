@@ -93,6 +93,26 @@ python widget.py
 
 Windows 10/11 + Python 3.10 이상이 필요합니다.
 
+## 백신이 바이러스라고 할 때
+
+**오탐입니다.** PyInstaller 로 만든 한 파일짜리 exe 는 실행할 때마다 스스로 압축을 풀어
+임시 폴더에서 실행하는데, 이 동작이 악성코드 패커와 똑같이 생겨서 백신이 자주 잡습니다.
+서명이 없고 내려받은 사람이 적어 평판도 없으니 더 잘 걸립니다.
+
+Windows Defender 최신 정의로 검사했을 때는 위협이 나오지 않았습니다.
+다른 백신에서 걸린다면 다음 순서로 해결하세요.
+
+1. **`WakppuBall-folder.zip` 을 받으세요.** 자기추출 단계가 없는 폴더형 빌드라 오탐이
+   훨씬 적습니다. 압축을 풀고 안의 `WakppuBall.exe` 를 실행하면 됩니다. 동작은 같습니다.
+2. 그래도 걸리면 **`WakppuBall-source.zip`** 을 쓰세요. exe 가 없으니 백신이 잡을 것도 없습니다.
+3. 오탐을 신고하면 며칠 안에 풀립니다.
+   - Microsoft Defender — <https://www.microsoft.com/en-us/wdsi/filesubmission>
+   - 안랩 V3 — <https://www.ahnlab.com/site/securityinfo/reportFile.do>
+   - 이스트시큐리티 알약 — <https://www.estsecurity.com/support/report>
+
+> 근본적으로 없애려면 코드 서명 인증서가 필요합니다. 즉시 통과하려면 EV 인증서라
+> 연 30~60만원대에 하드웨어 토큰이 필수라, 지인끼리 쓰는 용도로는 과합니다.
+
 ## 실행이 막힐 때
 
 exe 에 코드 서명이 없어서 Windows 가 경고하거나 막을 수 있습니다. 둘은 다른 기능입니다.
@@ -174,7 +194,8 @@ index.html         위젯 전체 (3D · 상호작용 · 소리)
 vendor/three.min.js
 sfx/               누를 때 재생되는 파열음
 wakppu.ico         16~256px 6단계 아이콘 (위젯을 직접 렌더해서 만듦)
-wakppu.spec        PyInstaller 빌드 설정 (Windows)
+wakppu.spec        PyInstaller 빌드 설정 (Windows · 한 파일)
+wakppu-dir.spec    PyInstaller 빌드 설정 (Windows · 폴더형, 백신 오탐 적음)
 wakppu-mac.spec    PyInstaller 빌드 설정 (macOS · 맥에서 실행할 것)
 wakppu.icns        macOS 아이콘
 시작하기.bat / .command   소스로 바로 실행 (Windows / macOS)
