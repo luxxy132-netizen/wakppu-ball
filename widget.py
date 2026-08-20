@@ -24,6 +24,7 @@ import os
 import subprocess
 import sys
 import tempfile
+import threading
 import time
 from pathlib import Path
 
@@ -55,6 +56,10 @@ SHORTCUT_NAME = "왁뿌볼"
 # 바로가기를 한 번 만들었는지 기억하는 곳. exe 옆이 아니라 여기 둬야
 # exe 를 읽기 전용 폴더에 둬도 되고, 사용자가 바로가기를 지웠을 때 되살아나지 않는다.
 STATE_DIR = Path(os.environ.get("LOCALAPPDATA") or Path.home()) / "wakppu"
+
+# 창 크기가 바뀌면 유리판 설정이 풀릴 수 있어 곧바로 다시 걸어야 한다.
+# punch_dwm 이 채워 넣는다. (윈도우 + DWM 모드일 때만)
+_reapply_glass = None
 
 
 def log(msg: str) -> None:
@@ -198,6 +203,10 @@ class Api:
 
     def resize(self, w: float, h: float) -> None:
         self._window.resize(int(w), int(h))
+        # 크기 변경은 SetWindowPos 를 거치는데 이때 유리판 설정이 풀리는 경우가 있다.
+        # 워치독이 곧 되걸지만 그때까지 배경이 불투명해 보이므로 즉시 다시 건다.
+        if _reapply_glass:
+            _reapply_glass()
 
     def log(self, msg: str) -> None:
         """페이지가 어디까지 진행됐는지 남긴다. 창이 멎으면 이 기록이 유일한 단서다."""
@@ -259,20 +268,52 @@ def punch_dwm(window: webview.Window) -> None:
         log(f"DWM 실패 - 모듈: {exc!r}")
         return
 
+    state = {"hr": None, "hwnd": None}
+
     def apply() -> None:
+        """UI 스레드에서 유리판 설정을 (다시) 건다."""
         try:
-            form.BackColor = Color.Black          # 순수 검정만 DWM 이 투명으로 처리한다
+            if form.IsDisposed:
+                return
+            if form.BackColor != Color.Black:
+                form.BackColor = Color.Black      # 순수 검정만 DWM 이 투명으로 처리한다
+            # 창 핸들은 다시 만들어질 수 있으므로 매번 새로 읽는다
             hwnd = int(str(form.Handle.ToInt64()))
-            rc = ctypes.windll.dwmapi.DwmExtendFrameIntoClientArea(
+            hr = ctypes.windll.dwmapi.DwmExtendFrameIntoClientArea(
                 hwnd, ctypes.byref(Margins(-1, -1, -1, -1)))
-            log(f"DWM 적용 (hr={rc}, 0 이면 성공)")
+            # 값이 바뀔 때만 남긴다. 매번 남기면 로그가 감당이 안 된다.
+            if (hr, hwnd) != (state["hr"], state["hwnd"]):
+                state["hr"], state["hwnd"] = hr, hwnd
+                log(f"DWM 적용 (hr={hr}, 0 이면 성공)")
         except Exception as exc:
             log(f"DWM 실패 - UI 스레드: {exc!r}")
 
-    try:
-        form.BeginInvoke(Action(apply))
-    except Exception as exc:
-        log(f"DWM 실패 - BeginInvoke: {exc!r}")
+    def reapply() -> bool:
+        """다른 스레드에서 호출. 창이 사라졌으면 False."""
+        try:
+            if form.IsDisposed:
+                return False
+            form.BeginInvoke(Action(apply))
+            return True
+        except Exception:
+            return False
+
+    def watchdog() -> None:
+        """유리판 설정이 풀리면 되걸어 준다.
+
+        창 크기 변경(SetWindowPos), 모니터 간 이동에 따른 DPI 변경, 절전 복귀,
+        화면 설정 변경 등에서 프레임 확장이 풀려 배경이 불투명해진다.
+        한 번만 걸어 두면 그 뒤로는 복구할 방법이 없어서 주기적으로 다시 건다.
+        같은 값이면 아무 일도 일어나지 않는 호출이라 부담이 없다.
+        """
+        while reapply():
+            time.sleep(2)
+
+    global _reapply_glass
+    _reapply_glass = reapply
+
+    reapply()
+    threading.Thread(target=watchdog, daemon=True, name="dwm-watchdog").start()
 
 
 def punch_background(window: webview.Window) -> None:
